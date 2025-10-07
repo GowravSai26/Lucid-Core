@@ -1,27 +1,30 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
+from pydantic import Field
+from dotenv import load_dotenv
 import os
 
-# Get the absolute path to the Backend/.env file
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ENV_PATH = os.path.join(BASE_DIR, ".env")
+# ✅ Force-load .env from Backend directory
+env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+load_dotenv(dotenv_path=env_path)
 
 class Settings(BaseSettings):
     DATABASE_URL: str
-    REDIS_URL: str = "redis://redis:6379"
-    S3_ENDPOINT: str
-    S3_ACCESS_KEY: str
-    S3_SECRET_KEY: str
-    S3_BUCKET: str = "lucid-artifacts"
-    OPENAI_API_KEY: str = ""
+    REDIS_URL: str | None = None
+    S3_ENDPOINT: str | None = None
+    S3_BUCKET: str | None = None
+    S3_ACCESS_KEY: str | None = None
+    S3_SECRET_KEY: str | None = None
+    OPENAI_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = None
 
-    model_config = SettingsConfigDict(env_file=ENV_PATH, env_file_encoding="utf-8")
+    class Config:
+        env_file = env_path
+        extra = "ignore"
 
 settings = Settings()
 
-# Debug print to confirm loading
+# Debug Print
 print("\n🔧 Loaded Environment Configuration:")
 print(f"  DATABASE_URL  → {settings.DATABASE_URL}")
 print(f"  REDIS_URL     → {settings.REDIS_URL}")
-print(f"  S3_ENDPOINT   → {settings.S3_ENDPOINT}")
-print(f"  S3_BUCKET     → {settings.S3_BUCKET}")
-print(f"  OPENAI_API_KEY→ {'✅ Present' if settings.OPENAI_API_KEY else '❌ Not Provided'}\n")
+print(f"  GEMINI_API_KEY→ {'✅ Provided' if settings.GEMINI_API_KEY else '❌ Not Provided'}\n")

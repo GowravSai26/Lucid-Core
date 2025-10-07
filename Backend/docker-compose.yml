@@ -1,0 +1,96 @@
+# 🐳 docker-compose.yml — Full Backend Stack for Lucid-Core
+# Version note: `version` key is deprecated, so we omit it intentionally.
+
+services:
+  # ---------------------- 🧠 Redis (Job Queue) ----------------------
+  redis:
+    image: redis:latest
+    container_name: lucid_redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # ---------------------- 💾 PostgreSQL Database ----------------------
+  postgres:
+    image: postgres:16
+    container_name: lucid_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Gowrav@2005
+      POSTGRES_DB: lucid
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: always
+
+  # ---------------------- 🗂️ MinIO (S3-Compatible Storage) ----------------------
+  minio:
+    image: minio/minio:latest
+    container_name: lucid_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data  # ✅ persistent storage for buckets/artifacts
+    restart: always
+
+  # ---------------------- ⚙️ FastAPI Backend API ----------------------
+  api:
+    build:
+      context: ..
+      dockerfile: Backend/Dockerfile
+    container_name: lucid_api
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql://postgres:Gowrav%402005@postgres:5432/lucid
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: lucid-artifacts
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      GEMINI_API_KEY: your_gemini_api_key_here
+      OPENAI_API_KEY: ""
+    depends_on:
+      - redis
+      - postgres
+      - minio
+    volumes:
+      - ../Backend:/app/Backend
+      - ../artifacts:/app/artifacts
+    restart: always
+
+  # ---------------------- 🧵 Background Worker ----------------------
+  worker:
+    build:
+      context: ..
+      dockerfile: Backend/Dockerfile
+    container_name: lucid_worker
+    command: python -m Backend.app.background_worker
+    environment:
+      DATABASE_URL: postgresql://postgres:Gowrav%402005@postgres:5432/lucid
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: lucid-artifacts
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      GEMINI_API_KEY: your_gemini_api_key_here
+      OPENAI_API_KEY: ""
+    depends_on:
+      - redis
+      - postgres
+      - minio
+    volumes:
+      - ../Backend:/app/Backend
+      - ../artifacts:/app/artifacts
+    restart: always
+
+# ---------------------- 🔒 Persistent Data Volumes ----------------------
+volumes:
+  pg_data:
+  minio_data:

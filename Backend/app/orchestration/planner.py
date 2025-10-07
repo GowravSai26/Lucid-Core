@@ -1,50 +1,71 @@
-from Backend.utils.llm_router import call_chat_completion
-from ..import models
+import json
 from sqlalchemy.orm import Session
-import re
+from Backend.app import models
+from Backend.utils.llm_router import call_chat_completion
 
-def parse_numbered_steps(text: str):
-    # simple parser: lines starting with "1." or "1)"
-    steps = []
-    for line in text.splitlines():
-        line = line.strip()
-        m = re.match(r'^\s*(\d+)[\.\)]\s*(.+)$', line)
-        if m:
-            steps.append(m.group(2).strip())
-    # fallback: split by double newline if none found
-    if not steps:
-        parts = [p.strip() for p in text.split("\n\n") if p.strip()]
-        steps = parts
-    return steps
-
-def generate_plan_sync(db: Session, project_id: int, goal_text: str):
+def generate_plan_outline(prompt: str):
     """
-    Synchronous planner: calls LLM and writes nodes into DB under main branch.
+    Uses LLM (Gemini/OpenAI) to generate a structured plan outline.
+    Returns a list of task steps.
     """
-    # Compose prompt
-    prompt = f"Break the goal into a numbered sequence of discrete steps. Goal:\n{goal_text}\n\nReturn only numbered steps."
+    system_prompt = (
+        "You are a senior AI software architect. "
+        "Given a user goal, decompose it into clear technical steps required to achieve it. "
+        "Respond in JSON format like this:\n"
+        "{ 'steps': [ {'title': '...', 'description': '...'}, ... ] }"
+    )
 
-    resp = call_chat_completion(prompt=prompt, system="You are a concise planner.", temperature=0.0)
-    text = resp.get("text", "") or ""
-    steps = parse_numbered_steps(text)
+    response = call_chat_completion(prompt=prompt, system=system_prompt)
+    text = response.get("text", "").strip()
 
-    # find main branch
-    branch = db.query(models.Branch).filter(models.Branch.project_id == project_id).order_by(models.Branch.id).first()
-    if not branch:
-        # create main branch if missing
-        branch = models.Branch(project_id=project_id, name="main")
-        db.add(branch)
-        db.commit()
-        db.refresh(branch)
+    # Try to extract valid JSON (LLMs sometimes add markdown formatting)
+    try:
+        text = text.replace("```json", "").replace("```", "")
+        data = json.loads(text)
+        return data.get("steps", [])
+    except Exception:
+        print("⚠️ LLM returned non-JSON, fallback to single node.")
+        return [{"title": "Initial Plan", "description": text[:500]}]
 
-    created_nodes = []
-    prev_node = None
-    for i, s in enumerate(steps, start=1):
-        node = models.Node(project_id=project_id, branch_id=branch.id, parent_id=prev_node.id if prev_node else None,
-                           title=f"Step {i}: {s[:80]}", prompt=s)
+
+def create_plan(db: Session, project_id: int, plan_prompt: str):
+    """
+    1️⃣ Generate a task plan using LLM.
+    2️⃣ Store plan and nodes in DB.
+    """
+    # Step 1: Get project
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise ValueError(f"Project ID {project_id} not found.")
+
+    # Step 2: Create branch for this plan
+    branch = models.Branch(project_id=project_id, name="ai-plan", status="draft")
+    db.add(branch)
+    db.commit()
+    db.refresh(branch)
+
+    # Step 3: Generate plan via Gemini/OpenAI
+    steps = generate_plan_outline(plan_prompt)
+
+    # Step 4: Store nodes
+    nodes = []
+    for idx, step in enumerate(steps):
+        node = models.Node(
+            project_id=project_id,
+            branch_id=branch.id,
+            parent_id=None if idx == 0 else nodes[-1].id,
+            title=step.get("title", f"Step {idx+1}"),
+            prompt=step.get("description", ""),
+        )
         db.add(node)
-        db.commit()
-        db.refresh(node)
-        prev_node = node
-        created_nodes.append(node)
-    return created_nodes
+        db.flush()
+        nodes.append(node)
+
+    # Step 5: Commit to DB
+    db.commit()
+
+    return {
+        "branch_id": branch.id,
+        "total_nodes": len(nodes),
+        "nodes": [{"id": n.id, "title": n.title} for n in nodes],
+    }
