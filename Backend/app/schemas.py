@@ -1,38 +1,56 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-from enum import Enum
+from Backend.app.models import NodeStatus
 
-# ------------------------------------------------------------
-# ENUMS
-# ------------------------------------------------------------
-class NodeStatus(str, Enum):
-    pending = "pending"
-    ok = "ok"
-    error = "error"
+# ------------------------------------------------
+# Project Schemas
+# ------------------------------------------------
 
-# ------------------------------------------------------------
-# PROJECT SCHEMAS
-# ------------------------------------------------------------
 class ProjectCreate(BaseModel):
     name: str
+    description: Optional[str] = None
 
 
 class ProjectRead(BaseModel):
     id: int
     name: str
+    description: Optional[str]
     created_at: datetime
 
     class Config:
-        from_attributes = True  # replaces orm_mode=True in Pydantic v2
+        from_attributes = True
 
 
-# ------------------------------------------------------------
-# NODE SCHEMAS
-# ------------------------------------------------------------
+# ------------------------------------------------
+# Branch Schemas
+# ------------------------------------------------
+
+class BranchCreate(BaseModel):
+    name: str
+    project_id: int
+    base_node_id: Optional[int] = None
+
+
+class BranchRead(BaseModel):
+    id: int
+    name: str
+    project_id: int
+    base_node_id: Optional[int]
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ------------------------------------------------
+# Node Schemas
+# ------------------------------------------------
+
 class NodeCreate(BaseModel):
     project_id: int
-    branch_id: int
+    branch_id: Optional[int] = None
     parent_id: Optional[int] = None
     title: Optional[str]
     prompt: Optional[str]
@@ -41,7 +59,7 @@ class NodeCreate(BaseModel):
 class NodeRead(BaseModel):
     id: int
     project_id: int
-    branch_id: int
+    branch_id: Optional[int]
     parent_id: Optional[int]
     title: Optional[str]
     prompt: Optional[str]
@@ -53,28 +71,16 @@ class NodeRead(BaseModel):
         from_attributes = True
 
 
-# ------------------------------------------------------------
-# BRANCH SCHEMAS (used in planner)
-# ------------------------------------------------------------
-class BranchRead(BaseModel):
+# ------------------------------------------------
+# Artifact Schemas
+# ------------------------------------------------
+
+class ArtifactRead(BaseModel):
     id: int
-    project_id: int
-    name: Optional[str]
-    status: Optional[str]
-    head_node_id: Optional[int]
+    node_id: int
+    file_path: str
+    file_type: str
+    created_at: datetime
 
     class Config:
         from_attributes = True
-
-
-# ------------------------------------------------------------
-# PLAN SCHEMAS (for planner route)
-# ------------------------------------------------------------
-class PlanCreate(BaseModel):
-    goal: str
-
-
-class PlanRead(BaseModel):
-    branch_id: int
-    total_nodes: int
-    nodes: List[NodeRead]
